@@ -29,9 +29,9 @@ class OpenClawApp:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("OpenClaw 安装配置工具")
-        self.root.geometry("820x920")
+        self.root.geometry("1120x850")
         self.root.resizable(True, True)
-        self.root.minsize(750, 650)
+        self.root.minsize(950, 650)
         self.root.configure(bg=BG)
         self._center_window()
         self._setup_styles()
@@ -42,7 +42,6 @@ class OpenClawApp:
 
         # 进程跟踪
         self.gateway_proc: subprocess.Popen | None = None
-        self.dashboard_proc: subprocess.Popen | None = None
 
         self._build_ui()
         self._load_existing_config()
@@ -53,7 +52,7 @@ class OpenClawApp:
 
     def _center_window(self):
         self.root.update_idletasks()
-        w, h = 820, 920
+        w, h = 1120, 850
         x = (self.root.winfo_screenwidth() - w) // 2
         y = (self.root.winfo_screenheight() - h) // 2
         self.root.geometry(f"{w}x{h}+{x}+{y}")
@@ -139,9 +138,16 @@ class OpenClawApp:
                          arrowcolor=FG_DIM, bordercolor=BG)
 
     def _build_ui(self):
-        # 主容器使用 Canvas + Scrollbar 实现可滚动，同时响应窗口缩放
-        self._canvas = tk.Canvas(self.root, bg=BG, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(self.root, orient=tk.VERTICAL, command=self._canvas.yview)
+        # ── 顶层左右分栏 ──
+        top_pane = ttk.Frame(self.root)
+        top_pane.pack(fill=tk.BOTH, expand=True)
+
+        # 左侧：可滚动配置区
+        left_container = ttk.Frame(top_pane)
+        left_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self._canvas = tk.Canvas(left_container, bg=BG, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(left_container, orient=tk.VERTICAL, command=self._canvas.yview)
         self.scroll_frame = ttk.Frame(self._canvas, padding=20)
 
         self.scroll_frame.bind("<Configure>",
@@ -160,6 +166,22 @@ class OpenClawApp:
             self._canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
         self._canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
+        # 右侧：日志输出
+        right_panel = ttk.LabelFrame(top_pane, text="  日志输出  ",
+                                      style="Section.TLabelframe", padding=8)
+        right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, padx=(0, 8), pady=8)
+        right_panel.configure(width=340)
+        right_panel.pack_propagate(False)
+
+        self.log_text = scrolledtext.ScrolledText(
+            right_panel, font=("Consolas", 9),
+            state=tk.DISABLED, wrap=tk.WORD,
+            bg=BG_INPUT, fg=FG, insertbackground=FG,
+            selectbackground=ACCENT, selectforeground=BG,
+            relief=tk.FLAT, borderwidth=0
+        )
+        self.log_text.pack(fill=tk.BOTH, expand=True)
+
         main = self.scroll_frame
 
         # ── 标题 ──
@@ -175,8 +197,8 @@ class OpenClawApp:
         status_grid.columnconfigure(3, weight=1)
 
         self.status_labels = {}
-        items = [("node", "Node.js"), ("npm", "npm"), ("openclaw", "OpenClaw"),
-                 ("config", "配置文件"), ("auth", "密钥文件")]
+        items = [("node", "Node.js"), ("npm", "npm"), ("uv", "uv"),
+                 ("openclaw", "OpenClaw"), ("config", "配置文件"), ("auth", "密钥文件")]
         for i, (key, name) in enumerate(items):
             row, col = divmod(i, 2)
             ttk.Label(status_grid, text=f"{name}:", foreground=FG_DIM).grid(
@@ -193,6 +215,26 @@ class OpenClawApp:
         self.install_btn = ttk.Button(btn_row, text="安装 OpenClaw",
                                        command=self._install_openclaw, style="Action.TButton")
         self.install_btn.pack(side=tk.LEFT, padx=(10, 0))
+        self.install_uv_btn = ttk.Button(btn_row, text="安装 uv",
+                                          command=self._install_uv, style="Action.TButton")
+        self.install_uv_btn.pack(side=tk.LEFT, padx=(10, 0))
+
+        ttk.Label(env_frame, text="💡 uv 是 Skills 安装所需的 Python 包管理器",
+                   foreground=FG_DIM, font=("Microsoft YaHei UI", 8)).pack(anchor=tk.W, pady=(8, 0))
+
+        # 启动服务（嵌入环境检测区）
+        launch_row = ttk.Frame(env_frame)
+        launch_row.pack(fill=tk.X, pady=(10, 0))
+        launch_row.columnconfigure(0, weight=1)
+        launch_row.columnconfigure(1, weight=1)
+
+        self.gateway_btn = ttk.Button(launch_row, text="🚀 启动 Gateway",
+                                       command=self._toggle_gateway, style="Action.TButton")
+        self.gateway_btn.grid(row=0, column=0, sticky=tk.EW, padx=(0, 5))
+
+        ttk.Button(launch_row, text="📊 启动 Dashboard",
+                   command=self._launch_dashboard, style="Action.TButton"
+                   ).grid(row=0, column=1, sticky=tk.EW, padx=(5, 0))
 
         # ── API 配置 ──
         config_frame = ttk.LabelFrame(main, text="  API 配置  ", style="Section.TLabelframe", padding=12)
@@ -250,6 +292,7 @@ class OpenClawApp:
         self.primary_combo = ttk.Combobox(primary_row, textvariable=self.primary_var,
                                            state="readonly", width=55)
         self.primary_combo.pack(side=tk.LEFT, padx=(10, 0), fill=tk.X, expand=True)
+        self.primary_combo.bind("<MouseWheel>", lambda e: "break")
 
         # Treeview
         tree_frame = ttk.Frame(model_frame)
@@ -304,36 +347,6 @@ class OpenClawApp:
         save_row.pack(fill=tk.X, pady=(0, 10))
         ttk.Button(save_row, text="💾 保存全部配置", command=self._save_config,
                    style="Save.TButton").pack(fill=tk.X)
-
-        # ── 启动服务 ──
-        launch_frame = ttk.LabelFrame(main, text="  启动服务  ", style="Section.TLabelframe", padding=12)
-        launch_frame.pack(fill=tk.X, pady=(0, 10))
-
-        launch_row = ttk.Frame(launch_frame)
-        launch_row.pack(fill=tk.X)
-        launch_row.columnconfigure(0, weight=1)
-        launch_row.columnconfigure(1, weight=1)
-
-        self.gateway_btn = ttk.Button(launch_row, text="🚀 启动 Gateway",
-                                       command=self._toggle_gateway, style="Action.TButton")
-        self.gateway_btn.grid(row=0, column=0, sticky=tk.EW, padx=(0, 5))
-
-        self.dashboard_btn = ttk.Button(launch_row, text="📊 启动 Dashboard",
-                                         command=self._toggle_dashboard, style="Action.TButton")
-        self.dashboard_btn.grid(row=0, column=1, sticky=tk.EW, padx=(5, 0))
-
-        # ── 日志输出 ──
-        log_frame = ttk.LabelFrame(main, text="  日志输出  ", style="Section.TLabelframe", padding=8)
-        log_frame.pack(fill=tk.BOTH, expand=True)
-
-        self.log_text = scrolledtext.ScrolledText(
-            log_frame, height=8, font=("Consolas", 9),
-            state=tk.DISABLED, wrap=tk.WORD,
-            bg=BG_INPUT, fg=FG, insertbackground=FG,
-            selectbackground=ACCENT, selectforeground=BG,
-            relief=tk.FLAT, borderwidth=0
-        )
-        self.log_text.pack(fill=tk.BOTH, expand=True)
 
     def _on_canvas_resize(self, event):
         """让 scroll_frame 跟随 canvas 宽度，实现响应式布局"""
@@ -452,12 +465,15 @@ class OpenClawApp:
         def _check():
             node_ok, node_ver = installer.check_node_installed()
             npm_ok, npm_ver = installer.check_npm_installed()
+            uv_ok, uv_ver = installer.check_uv_installed()
             claw_ok, claw_ver = installer.check_openclaw_installed()
             config_exists, auth_exists = installer.check_config_exists()
             self.root.after(0, self._set_status, "node", node_ok,
                            f"✅ {node_ver}" if node_ok else f"❌ {node_ver}")
             self.root.after(0, self._set_status, "npm", npm_ok,
                            f"✅ v{npm_ver}" if npm_ok else f"❌ {npm_ver}")
+            self.root.after(0, self._set_status, "uv", uv_ok,
+                           f"✅ {uv_ver}" if uv_ok else f"❌ {uv_ver}")
             self.root.after(0, self._set_status, "openclaw", claw_ok,
                            f"✅ {claw_ver}" if claw_ok else f"❌ {claw_ver}")
             self.root.after(0, self._set_status, "config", config_exists,
@@ -541,6 +557,19 @@ class OpenClawApp:
         messagebox.showinfo("成功", "配置已保存！")
         self._refresh_status()
 
+        # 如果 Gateway 正在运行，自动重启以应用新配置
+        if self._is_proc_alive(self.gateway_proc):
+            self._log("🔄 检测到 Gateway 正在运行，正在重启以应用新配置...")
+            self._stop_process(self.gateway_proc)
+            self.gateway_proc = None
+            try:
+                self.gateway_proc = installer.launch_gateway()
+                self.gateway_btn.configure(text="⏹ 停止 Gateway", style="Stop.TButton")
+                self._log("✅ Gateway 已重启")
+            except Exception as e:
+                self.gateway_btn.configure(text="🚀 启动 Gateway", style="Action.TButton")
+                self._log(f"❌ Gateway 重启失败: {e}")
+
     # ── Gateway / Dashboard 启停 ──
 
     def _is_proc_alive(self, proc: subprocess.Popen | None) -> bool:
@@ -565,24 +594,17 @@ class OpenClawApp:
                 self._log(f"❌ 启动 Gateway 失败: {e}")
                 messagebox.showerror("错误", f"启动失败:\n{e}")
 
-    def _toggle_dashboard(self):
-        if self._is_proc_alive(self.dashboard_proc):
-            self._stop_process(self.dashboard_proc)
-            self.dashboard_proc = None
-            self.dashboard_btn.configure(text="📊 启动 Dashboard", style="Action.TButton")
-            self._log("⏹ Dashboard 已停止")
-        else:
-            claw_ok, _ = installer.check_openclaw_installed()
-            if not claw_ok:
-                messagebox.showerror("错误", "OpenClaw 未安装，请先安装")
-                return
-            try:
-                self.dashboard_proc = installer.launch_dashboard()
-                self.dashboard_btn.configure(text="⏹ 停止 Dashboard", style="Stop.TButton")
-                self._log("📊 Dashboard 已启动（新窗口）")
-            except Exception as e:
-                self._log(f"❌ 启动 Dashboard 失败: {e}")
-                messagebox.showerror("错误", f"启动失败:\n{e}")
+    def _launch_dashboard(self):
+        claw_ok, _ = installer.check_openclaw_installed()
+        if not claw_ok:
+            messagebox.showerror("错误", "OpenClaw 未安装，请先安装")
+            return
+        try:
+            installer.launch_dashboard()
+            self._log("📊 Dashboard 已启动（新窗口）")
+        except Exception as e:
+            self._log(f"❌ 启动 Dashboard 失败: {e}")
+            messagebox.showerror("错误", f"启动失败:\n{e}")
 
     def _stop_process(self, proc: subprocess.Popen):
         """终止进程及其子进程树"""
@@ -597,11 +619,30 @@ class OpenClawApp:
             except Exception:
                 pass
 
+    def _install_uv(self):
+        self.install_uv_btn.configure(state=tk.DISABLED)
+        self._log("正在安装 uv，请稍候...")
+
+        def _run():
+            ok, msg = installer.install_uv(
+                callback=lambda line: self.root.after(0, self._log, line))
+            self.root.after(0, self._on_install_uv_done, ok, msg)
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _on_install_uv_done(self, ok: bool, msg: str):
+        self.install_uv_btn.configure(state=tk.NORMAL)
+        if ok:
+            self._log("✅ " + msg)
+            messagebox.showinfo("成功", msg)
+        else:
+            self._log("❌ uv 安装失败: " + msg)
+            messagebox.showerror("安装失败", msg)
+        self._refresh_status()
+
     def _on_close(self):
         """关闭窗口时清理子进程"""
-        for proc in [self.gateway_proc, self.dashboard_proc]:
-            if self._is_proc_alive(proc):
-                self._stop_process(proc)
+        if self._is_proc_alive(self.gateway_proc):
+            self._stop_process(self.gateway_proc)
         self.root.destroy()
 
     def run(self):

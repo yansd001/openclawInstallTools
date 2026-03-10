@@ -83,6 +83,63 @@ def check_npm_installed() -> tuple[bool, str]:
         return False, str(e)
 
 
+def _find_uv_path() -> str | None:
+    """查找 uv 可执行文件路径（含常见安装位置）"""
+    # 先试 PATH 中的 uv
+    found = shutil.which("uv")
+    if found:
+        return found
+    # 检查 Windows 常见安装位置
+    home = os.environ.get("USERPROFILE", "")
+    candidates = [
+        os.path.join(home, ".local", "bin", "uv.exe"),
+        os.path.join(home, ".cargo", "bin", "uv.exe"),
+    ]
+    for p in candidates:
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+def check_uv_installed() -> tuple[bool, str]:
+    """检查 uv 是否已安装"""
+    uv_path = _find_uv_path()
+    if not uv_path:
+        return False, "未安装"
+    try:
+        result = subprocess.run(
+            [uv_path, "--version"],
+            capture_output=True, text=True, timeout=10,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        if result.returncode == 0:
+            return True, result.stdout.strip()
+        return False, "uv 命令执行失败"
+    except Exception as e:
+        return False, str(e)
+
+
+def install_uv(callback=None):
+    """通过 PowerShell 安装 uv"""
+    try:
+        process = subprocess.Popen(
+            ["powershell", "-ExecutionPolicy", "ByPass", "-c",
+             "irm https://astral.sh/uv/install.ps1 | iex"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        for line in iter(process.stdout.readline, ""):
+            stripped = line.strip()
+            if stripped and callback:
+                callback(stripped)
+        process.wait()
+        if process.returncode == 0:
+            return True, "uv 安装成功"
+        return False, f"安装失败 (exit code {process.returncode})"
+    except Exception as e:
+        return False, str(e)
+
+
 def check_openclaw_installed() -> tuple[bool, str]:
     """检查 OpenClaw 是否已安装"""
     try:
