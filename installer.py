@@ -414,6 +414,137 @@ def read_existing_workspace() -> str:
         return DEFAULT_WORKSPACE
 
 
+def uninstall_uv(callback=None):
+    """
+    卸载 uv。优先使用 uv self uninstall，失败则手动清理文件。
+    callback: 接收实时日志的回调函数 callback(line: str)
+    返回 (成功, 消息)
+    """
+    uv_path = _find_uv_path()
+    if not uv_path:
+        return False, "uv 未安装，无需卸载"
+
+    # 先尝试 uv self uninstall
+    try:
+        if callback:
+            callback(f"正在卸载 uv（{uv_path}）...")
+        process = subprocess.Popen(
+            [uv_path, "self", "uninstall"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        for line in iter(process.stdout.readline, ""):
+            stripped = line.strip()
+            if stripped and callback:
+                callback(stripped)
+        process.wait()
+        if process.returncode == 0:
+            return True, "uv 卸载成功"
+    except Exception:
+        pass
+
+    # 手动清理
+    if callback:
+        callback("uv self uninstall 失败，尝试手动清理...")
+    home = os.environ.get("USERPROFILE", "")
+    files_to_remove = [
+        uv_path,
+        os.path.join(os.path.dirname(uv_path), "uvx.exe"),
+    ]
+    dirs_to_remove = [
+        os.path.join(home, ".local", "share", "uv"),
+    ]
+    removed_any = False
+    for f in files_to_remove:
+        if os.path.isfile(f):
+            try:
+                os.remove(f)
+                if callback:
+                    callback(f"已删除: {f}")
+                removed_any = True
+            except Exception as e:
+                if callback:
+                    callback(f"删除失败 {f}: {e}")
+    for d in dirs_to_remove:
+        if os.path.isdir(d):
+            try:
+                shutil.rmtree(d)
+                if callback:
+                    callback(f"已删除目录: {d}")
+                removed_any = True
+            except Exception as e:
+                if callback:
+                    callback(f"删除目录失败 {d}: {e}")
+    if removed_any:
+        return True, "uv 手动卸载完成"
+    return False, "未能卸载 uv，请手动删除"
+
+
+def uninstall_openclaw(callback=None):
+    """
+    卸载 OpenClaw：npm 全局卸载 + 删除 ~/.openclaw 配置目录。
+    callback: 接收实时日志的回调函数 callback(line: str)
+    返回 (成功, 消息)
+    """
+    errors = []
+
+    # 1) npm 全局卸载
+    if callback:
+        callback("正在通过 npm 卸载 openclaw...")
+    try:
+        process = subprocess.Popen(
+            ["npm", "uninstall", "-g", "openclaw"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, shell=True,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        for line in iter(process.stdout.readline, ""):
+            line = line.rstrip()
+            if line and callback:
+                callback(line)
+        process.wait()
+        if process.returncode == 0:
+            if callback:
+                callback("npm 全局卸载 openclaw 完成")
+        else:
+            msg = f"npm uninstall 返回非零退出码: {process.returncode}"
+            errors.append(msg)
+            if callback:
+                callback(msg)
+    except FileNotFoundError:
+        msg = "未找到 npm，跳过 npm 卸载步骤"
+        errors.append(msg)
+        if callback:
+            callback(msg)
+    except Exception as e:
+        msg = f"npm 卸载失败: {e}"
+        errors.append(msg)
+        if callback:
+            callback(msg)
+
+    # 2) 删除 ~/.openclaw 配置目录
+    openclaw_dir = get_openclaw_dir()
+    if openclaw_dir.exists():
+        if callback:
+            callback(f"正在删除配置目录: {openclaw_dir}")
+        try:
+            shutil.rmtree(openclaw_dir)
+            if callback:
+                callback(f"已删除配置目录: {openclaw_dir}")
+        except Exception as e:
+            msg = f"删除配置目录失败: {e}"
+            errors.append(msg)
+            if callback:
+                callback(msg)
+    else:
+        if callback:
+            callback(f"配置目录不存在，无需删除: {openclaw_dir}")
+
+    if errors:
+        return False, "卸载过程中出现错误:\n" + "\n".join(errors)
+    return True, "OpenClaw 卸载完成（已移除 npm 包及配置目录）"
+
+
 def launch_gateway():
     """启动 openclaw gateway，返回进程对象"""
     return subprocess.Popen(

@@ -215,9 +215,15 @@ class OpenClawApp:
         self.install_btn = ttk.Button(btn_row, text="安装 OpenClaw",
                                        command=self._install_openclaw, style="Action.TButton")
         self.install_btn.pack(side=tk.LEFT, padx=(10, 0))
+        self.uninstall_btn = ttk.Button(btn_row, text="卸载 OpenClaw",
+                                         command=self._uninstall_openclaw, style="Stop.TButton")
+        self.uninstall_btn.pack(side=tk.LEFT, padx=(10, 0))
         self.install_uv_btn = ttk.Button(btn_row, text="安装 uv",
                                           command=self._install_uv, style="Action.TButton")
         self.install_uv_btn.pack(side=tk.LEFT, padx=(10, 0))
+        self.uninstall_uv_btn = ttk.Button(btn_row, text="卸载 uv",
+                                            command=self._uninstall_uv, style="Stop.TButton")
+        self.uninstall_uv_btn.pack(side=tk.LEFT, padx=(10, 0))
 
         ttk.Label(env_frame, text="💡 uv 是 Skills 安装所需的 Python 包管理器",
                    foreground=FG_DIM, font=("Microsoft YaHei UI", 8)).pack(anchor=tk.W, pady=(8, 0))
@@ -637,6 +643,72 @@ class OpenClawApp:
         else:
             self._log("❌ uv 安装失败: " + msg)
             messagebox.showerror("安装失败", msg)
+        self._refresh_status()
+
+    def _uninstall_uv(self):
+        uv_ok, _ = installer.check_uv_installed()
+        if not uv_ok:
+            messagebox.showinfo("提示", "uv 未安装，无需卸载")
+            return
+        if not messagebox.askyesno("确认卸载", "确定要卸载 uv 吗？\n这将移除 uv 可执行文件及其缓存数据。"):
+            return
+        self.uninstall_uv_btn.configure(state=tk.DISABLED)
+        self._log("正在卸载 uv，请稍候...")
+
+        def _run():
+            ok, msg = installer.uninstall_uv(
+                callback=lambda line: self.root.after(0, self._log, line))
+            self.root.after(0, self._on_uninstall_uv_done, ok, msg)
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _on_uninstall_uv_done(self, ok: bool, msg: str):
+        self.uninstall_uv_btn.configure(state=tk.NORMAL)
+        if ok:
+            self._log("✅ " + msg)
+            messagebox.showinfo("成功", msg)
+        else:
+            self._log("❌ uv 卸载失败: " + msg)
+            messagebox.showerror("卸载失败", msg)
+        self._refresh_status()
+
+    def _uninstall_openclaw(self):
+        claw_ok, _ = installer.check_openclaw_installed()
+        config_exists, auth_exists = installer.check_config_exists()
+        if not claw_ok and not config_exists and not auth_exists:
+            messagebox.showinfo("提示", "OpenClaw 未安装且无配置文件，无需卸载")
+            return
+        if not messagebox.askyesno(
+            "确认卸载",
+            "确定要卸载 OpenClaw 吗？\n\n"
+            "此操作将：\n"
+            "  • 通过 npm 全局卸载 openclaw\n"
+            "  • 删除 ~/.openclaw 配置目录（含配置文件、密钥文件等）\n\n"
+            "⚠️ 此操作不可撤销！"
+        ):
+            return
+        # 如果 Gateway 正在运行，先停止
+        if self._is_proc_alive(self.gateway_proc):
+            self._stop_process(self.gateway_proc)
+            self.gateway_proc = None
+            self.gateway_btn.configure(text="🚀 启动 Gateway", style="Action.TButton")
+            self._log("⏹ 已停止 Gateway")
+        self.uninstall_btn.configure(state=tk.DISABLED)
+        self._log("正在卸载 OpenClaw，请稍候...")
+
+        def _run():
+            ok, msg = installer.uninstall_openclaw(
+                callback=lambda line: self.root.after(0, self._log, line))
+            self.root.after(0, self._on_uninstall_openclaw_done, ok, msg)
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _on_uninstall_openclaw_done(self, ok: bool, msg: str):
+        self.uninstall_btn.configure(state=tk.NORMAL)
+        if ok:
+            self._log("✅ " + msg)
+            messagebox.showinfo("成功", msg)
+        else:
+            self._log("❌ OpenClaw 卸载失败: " + msg)
+            messagebox.showerror("卸载失败", msg)
         self._refresh_status()
 
     def _on_close(self):
