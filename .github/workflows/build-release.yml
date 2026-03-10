@@ -33,7 +33,11 @@ jobs:
             --name "OpenClawInstaller" `
             --add-data "installer.py;." `
             --add-data "gui.py;." `
+            --version-file version_info.txt `
             main.py
+
+      - name: Package ZIP
+        run: Compress-Archive -Path dist/OpenClawInstaller.exe -DestinationPath dist/OpenClawInstaller-v${{ github.event.inputs.version }}.zip
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -46,9 +50,23 @@ jobs:
             Windows 可执行文件，双击即可运行，无需安装 Python。
 
             ### 使用方法
-            1. 下载 `OpenClawInstaller.exe`
-            2. 双击运行
-            3. 按界面提示完成安装和配置
-          files: dist/OpenClawInstaller.exe
+            1. 下载 `OpenClawInstaller-v${{ github.event.inputs.version }}.zip`
+            2. 解压到任意目录
+            3. 双击 `OpenClawInstaller.exe` 运行
+
+            ### ⚠️ Windows 安全提示
+            由于程序未进行商业代码签名，Windows 可能弹出安全警告：
+
+            **如果提示"智能应用控制已阻止可能不安全的应用"：**
+            1. 右键点击 `OpenClawInstaller.exe` → **属性**
+            2. 在底部勾选 **"解除锁定"** → 点击 **确定**
+            3. 重新双击运行即可
+
+            **如果提示"Windows 已保护你的电脑"（SmartScreen）：**
+            1. 点击 **"更多信息"**
+            2. 点击 **"仍要运行"**
+          files: |
+            dist/OpenClawInstaller.exe
+            dist/OpenClawInstaller-v${{ github.event.inputs.version }}.zip
           draft: false
           prerelease: false
