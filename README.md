@@ -6,7 +6,7 @@
 
 ### 环境检测
 
-- 自动检测 Node.js、npm、uv、OpenClaw 的安装状态及版本号
+- 自动检测 Node.js、npm、Git、uv、OpenClaw 的安装状态及版本号
 - 自动检测 `openclaw.json` 配置文件和 `auth-profiles.json` 密钥文件是否存在
 - 支持手动刷新状态
 
@@ -52,6 +52,7 @@
 - Windows 10/11
 - [Python 3.10+](https://www.python.org/)（仅使用内置 tkinter，无需额外依赖）
 - [Node.js 18+](https://nodejs.org/)（安装 OpenClaw 需要）
+- [Git](https://git-scm.com/)（OpenClaw Skills 等功能需要）
 
 ## 使用方式
 
@@ -63,7 +64,7 @@ python main.py
 
 | 区域 | 说明 |
 |------|------|
-| 环境检测 | 显示 Node.js / npm / uv / OpenClaw / 配置文件 / 密钥文件 的安装状态，提供安装和卸载按钮 |
+| 环境检测 | 显示 Node.js / npm / Git / uv / OpenClaw / 配置文件 / 密钥文件 的安装状态，提供安装和卸载按钮 |
 | API 配置 | 填写 GPT / Claude / Google / Other 四组 API Key |
 | 模型管理 | 管理模型列表、选择默认模型、设置 Workspace 路径 |
 | 保存配置 | 一键保存全部配置到对应文件 |
@@ -84,6 +85,14 @@ openclawInstallTools/
 ├── installer.py     # 安装、卸载与配置核心逻辑
 └── README.md        # 本文件
 ```
+
+## 捐赠支持
+
+如果这个工具对你有帮助，欢迎请作者喝杯咖啡 ☕
+
+| 支付宝 | 微信 |
+|:---:|:---:|
+| <img src="支付宝捐赠.jpg" width="200"> | <img src="微信捐赠.jpg" width="200"> |
 
 ## 参考文档
 

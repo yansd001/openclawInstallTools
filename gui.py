@@ -197,8 +197,9 @@ class OpenClawApp:
         status_grid.columnconfigure(3, weight=1)
 
         self.status_labels = {}
-        items = [("node", "Node.js"), ("npm", "npm"), ("uv", "uv"),
-                 ("openclaw", "OpenClaw"), ("config", "配置文件"), ("auth", "密钥文件")]
+        items = [("node", "Node.js"), ("npm", "npm"), ("git", "Git"),
+                 ("uv", "uv"), ("openclaw", "OpenClaw"),
+                 ("config", "配置文件"), ("auth", "密钥文件")]
         for i, (key, name) in enumerate(items):
             row, col = divmod(i, 2)
             ttk.Label(status_grid, text=f"{name}:", foreground=FG_DIM).grid(
@@ -471,6 +472,7 @@ class OpenClawApp:
         def _check():
             node_ok, node_ver = installer.check_node_installed()
             npm_ok, npm_ver = installer.check_npm_installed()
+            git_ok, git_ver = installer.check_git_installed()
             uv_ok, uv_ver = installer.check_uv_installed()
             claw_ok, claw_ver = installer.check_openclaw_installed()
             config_exists, auth_exists = installer.check_config_exists()
@@ -478,6 +480,8 @@ class OpenClawApp:
                            f"✅ {node_ver}" if node_ok else f"❌ {node_ver}")
             self.root.after(0, self._set_status, "npm", npm_ok,
                            f"✅ v{npm_ver}" if npm_ok else f"❌ {npm_ver}")
+            self.root.after(0, self._set_status, "git", git_ok,
+                           f"✅ {git_ver}" if git_ok else f"❌ {git_ver}")
             self.root.after(0, self._set_status, "uv", uv_ok,
                            f"✅ {uv_ver}" if uv_ok else f"❌ {uv_ver}")
             self.root.after(0, self._set_status, "openclaw", claw_ok,

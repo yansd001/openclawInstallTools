@@ -48,6 +48,23 @@ def get_auth_profiles_dir() -> Path:
     return get_openclaw_dir() / "agents" / "main" / "agent"
 
 
+def check_git_installed() -> tuple[bool, str]:
+    """检查 Git 是否已安装，返回 (是否安装, 版本号或错误信息)"""
+    try:
+        result = subprocess.run(
+            ["git", "--version"],
+            capture_output=True, text=True, timeout=10,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        if result.returncode == 0:
+            return True, result.stdout.strip()
+        return False, "git 命令执行失败"
+    except FileNotFoundError:
+        return False, "未找到 Git，请先安装 Git"
+    except Exception as e:
+        return False, str(e)
+
+
 def check_node_installed() -> tuple[bool, str]:
     """检查 Node.js 是否已安装，返回 (是否安装, 版本号或错误信息)"""
     try:
