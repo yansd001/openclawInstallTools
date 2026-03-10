@@ -1,0 +1,54 @@
+name: Build & Release Windows EXE
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "发布版本号 (例如 1.0.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PyInstaller
+        run: pip install pyinstaller
+
+      - name: Build EXE
+        run: |
+          pyinstaller --noconfirm --onefile --windowed `
+            --name "OpenClawInstaller" `
+            --add-data "installer.py;." `
+            --add-data "gui.py;." `
+            main.py
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.event.inputs.version }}
+          name: OpenClaw Installer v${{ github.event.inputs.version }}
+          body: |
+            ## OpenClaw 安装配置工具 v${{ github.event.inputs.version }}
+
+            Windows 可执行文件，双击即可运行，无需安装 Python。
+
+            ### 使用方法
+            1. 下载 `OpenClawInstaller.exe`
+            2. 双击运行
+            3. 按界面提示完成安装和配置
+          files: dist/OpenClawInstaller.exe
+          draft: false
+          prerelease: false
