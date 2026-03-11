@@ -4,7 +4,7 @@
 
 ## 视频教程
 
-<video src="1.mp4" controls width="600"></video>
+<video src="https://github.com/yansd001/openclawInstallTools/raw/main/1.mp4" controls width="600"></video>
 
 👉 [点击观看 Bilibili 视频教程](https://www.bilibili.com/video/BV1RwcXzREwR)
 
