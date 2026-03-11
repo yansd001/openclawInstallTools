@@ -3,9 +3,6 @@
 一个可视化的 Windows 桌面工具，用于一键安装、配置和卸载 [OpenClaw](https://openclaw.ai/)。
 
 ## 视频教程
-
-<video src="https://github.com/yansd001/openclawInstallTools/raw/main/1.mp4" controls width="600"></video>
-
 👉 [点击观看 Bilibili 视频教程](https://www.bilibili.com/video/BV1RwcXzREwR)
 
 ## 功能特性
