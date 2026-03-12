@@ -58,7 +58,7 @@
 
 - Windows 10/11
 - [Python 3.10+](https://www.python.org/)（仅使用内置 tkinter，无需额外依赖）
-- [Node.js 18+](https://nodejs.org/)（安装 OpenClaw 需要）
+- [Node.js 22+](https://nodejs.org/)（安装 OpenClaw 需要）
 - [Git](https://git-scm.com/)（OpenClaw Skills 等功能需要）
 
 ## 使用方式
