@@ -5,6 +5,10 @@
 ## 视频教程
 👉 [点击观看 Bilibili 视频教程](https://www.bilibili.com/video/BV1RwcXzREwR)
 
+## 软件截图
+
+![软件截图](assets/截图.png)
+
 ## 功能特性
 
 ### 环境检测
@@ -95,7 +99,7 @@ openclawInstallTools/
 
 | 支付宝 | 微信 |
 |:---:|:---:|
-| <img src="支付宝捐赠.jpg" width="200"> | <img src="微信捐赠.jpg" width="200"> |
+| <img src="assets/支付宝捐赠.jpg" width="200"> | <img src="assets/微信捐赠.jpg" width="200"> |
 
 ## 参考文档
 
