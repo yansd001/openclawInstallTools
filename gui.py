@@ -225,6 +225,9 @@ class OpenClawApp:
         self.uninstall_uv_btn = ttk.Button(btn_row, text="卸载 uv",
                                             command=self._uninstall_uv, style="Stop.TButton")
         self.uninstall_uv_btn.pack(side=tk.LEFT, padx=(10, 0))
+        self.install_weixin_btn = ttk.Button(btn_row, text="安装微信插件",
+                              command=self._install_weixin_plugin, style="Action.TButton")
+        self.install_weixin_btn.pack(side=tk.LEFT, padx=(10, 0))
 
         ttk.Label(env_frame, text="💡 uv 是 Skills 安装所需的 Python 包管理器",
                    foreground=FG_DIM, font=("Microsoft YaHei UI", 8)).pack(anchor=tk.W, pady=(8, 0))
@@ -250,7 +253,11 @@ class OpenClawApp:
         url_row = ttk.Frame(config_frame)
         url_row.pack(fill=tk.X, pady=(0, 10))
         ttk.Label(url_row, text="API Base URL:").pack(side=tk.LEFT)
-        ttk.Label(url_row, text=installer.BASE_URL, style="Url.TLabel").pack(side=tk.LEFT, padx=(10, 0))
+        self.base_url_var = tk.StringVar(value=installer.BASE_URL)
+        ttk.Entry(url_row, textvariable=self.base_url_var).pack(side=tk.LEFT, padx=(10, 5), fill=tk.X, expand=True)
+        ttk.Button(url_row, text="恢复默认",
+               command=lambda: self.base_url_var.set(installer.BASE_URL),
+               style="Small.TButton").pack(side=tk.LEFT)
 
         key_grid = ttk.Frame(config_frame)
         key_grid.pack(fill=tk.X)
@@ -505,6 +512,7 @@ class OpenClawApp:
         self.models = installer.read_existing_models()
         self.primary_model = installer.read_existing_primary_model()
         self._refresh_model_tree()
+        self.base_url_var.set(installer.read_existing_base_url())
         self.workspace_var.set(installer.read_existing_workspace())
 
     def _install_openclaw(self):
@@ -536,6 +544,7 @@ class OpenClawApp:
         claude_key = self.key_vars["claude"].get().strip()
         google_key = self.key_vars["google"].get().strip()
         other_key = self.key_vars["other"].get().strip()
+        base_url = self.base_url_var.get().strip() or installer.BASE_URL
 
         if not any([gpt_key, claude_key, google_key, other_key]):
             messagebox.showwarning("提示", "请至少填写一个 API Key")
@@ -547,7 +556,7 @@ class OpenClawApp:
         primary = self._get_selected_primary()
         workspace = self.workspace_var.get().strip() or installer.DEFAULT_WORKSPACE
 
-        ok1, path1 = installer.save_openclaw_config(self.models, primary, workspace)
+        ok1, path1 = installer.save_openclaw_config(self.models, primary, workspace, base_url)
         if ok1:
             self._log(f"✅ 配置文件已保存: {path1}")
         else:
@@ -646,6 +655,33 @@ class OpenClawApp:
             messagebox.showinfo("成功", msg)
         else:
             self._log("❌ uv 安装失败: " + msg)
+            messagebox.showerror("安装失败", msg)
+        self._refresh_status()
+
+    def _install_weixin_plugin(self):
+        claw_ok, _ = installer.check_openclaw_installed()
+        if not claw_ok:
+            messagebox.showerror("错误", "OpenClaw 未安装，请先安装")
+            return
+
+        self.install_weixin_btn.configure(state=tk.DISABLED)
+        self._log("正在安装微信插件，请稍候...")
+
+        def _run():
+            ok, msg = installer.install_weixin_plugin(
+                callback=lambda line: self.root.after(0, self._log, line)
+            )
+            self.root.after(0, self._on_install_weixin_done, ok, msg)
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _on_install_weixin_done(self, ok: bool, msg: str):
+        self.install_weixin_btn.configure(state=tk.NORMAL)
+        if ok:
+            self._log("✅ " + msg)
+            messagebox.showinfo("成功", msg)
+        else:
+            self._log("❌ 微信插件安装失败: " + msg)
             messagebox.showerror("安装失败", msg)
         self._refresh_status()
 

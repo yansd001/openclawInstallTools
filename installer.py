@@ -4,11 +4,13 @@ import json
 import os
 import subprocess
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 
 # ── 常量定义 ──
 
 BASE_URL = "https://yansd666.com"
+WEIXIN_PLUGIN_ALLOW = "openclaw-weixin"
 
 PROVIDERS = {
     "api-proxy-gpt": {"label": "GPT", "baseUrl_suffix": "/v1", "api": "openai-completions"},
@@ -46,6 +48,65 @@ def get_openclaw_dir() -> Path:
 def get_auth_profiles_dir() -> Path:
     """获取 auth-profiles.json 所在目录"""
     return get_openclaw_dir() / "agents" / "main" / "agent"
+
+
+def _normalize_base_url(base_url: str) -> str:
+    """规范化 Base URL，去掉末尾斜杠"""
+    value = (base_url or BASE_URL).strip()
+    if not value:
+        value = BASE_URL
+    return value.rstrip("/")
+
+
+def _ensure_dict(parent: dict, key: str) -> dict:
+    """确保 parent[key] 为 dict，不存在或类型不对时自动创建"""
+    node = parent.get(key)
+    if isinstance(node, dict):
+        return node
+    parent[key] = {}
+    return parent[key]
+
+
+def _read_json_object(path: Path) -> dict:
+    """读取 JSON 对象，失败时返回空对象"""
+    if not path.exists():
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _extract_base_url_from_providers(providers: dict) -> str:
+    """从 providers 中提取基础 URL（去除 provider 后缀）"""
+    if not isinstance(providers, dict):
+        return BASE_URL
+
+    # 优先使用 Claude（无后缀），值最直接
+    claude = providers.get("api-proxy-claude")
+    if isinstance(claude, dict):
+        raw = claude.get("baseUrl")
+        if isinstance(raw, str) and raw.strip():
+            return _normalize_base_url(raw)
+
+    for pkey, pinfo in PROVIDERS.items():
+        pdata = providers.get(pkey)
+        if not isinstance(pdata, dict):
+            continue
+        raw = pdata.get("baseUrl")
+        if not isinstance(raw, str) or not raw.strip():
+            continue
+
+        base_url = raw.strip()
+        suffix = pinfo["baseUrl_suffix"]
+        if suffix and base_url.endswith(suffix):
+            return _normalize_base_url(base_url[:-len(suffix)])
+        if not suffix:
+            return _normalize_base_url(base_url)
+
+    return BASE_URL
 
 
 def check_git_installed() -> tuple[bool, str]:
@@ -206,10 +267,11 @@ def install_openclaw(callback=None):
         return False, str(e)
 
 
-def generate_openclaw_config(models: list[dict], primary_model: str, workspace: str = "") -> dict:
+def generate_openclaw_config(models: list[dict], primary_model: str, workspace: str = "", base_url: str = BASE_URL) -> dict:
     """生成 openclaw.json 配置内容"""
     if not workspace:
         workspace = DEFAULT_WORKSPACE
+    normalized_base_url = _normalize_base_url(base_url)
     # 按 provider 分组模型
     provider_models = {}
     for m in models:
@@ -229,7 +291,7 @@ def generate_openclaw_config(models: list[dict], primary_model: str, workspace: 
         if pkey in provider_models:
             suffix = pinfo["baseUrl_suffix"]
             providers_config[pkey] = {
-                "baseUrl": f"{BASE_URL}{suffix}" if suffix else BASE_URL,
+                "baseUrl": f"{normalized_base_url}{suffix}" if suffix else normalized_base_url,
                 "api": pinfo["api"],
                 "models": provider_models[pkey],
             }
@@ -251,7 +313,7 @@ def generate_openclaw_config(models: list[dict], primary_model: str, workspace: 
     return {
         "meta": {
             "lastTouchedVersion": "2026.3.2",
-            "lastTouchedAt": "2026-03-04T11:23:47.011Z"
+            "lastTouchedAt": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
         },
         "auth": {
             "profiles": auth_profiles
@@ -319,13 +381,83 @@ def generate_auth_profiles(gpt_key: str, claude_key: str, google_key: str, other
     }
 
 
-def save_openclaw_config(models: list[dict], primary_model: str, workspace: str = "") -> tuple[bool, str]:
+def save_openclaw_config(
+    models: list[dict],
+    primary_model: str,
+    workspace: str = "",
+    base_url: str = BASE_URL,
+) -> tuple[bool, str]:
     """保存 openclaw.json 配置文件"""
     try:
         config_dir = get_openclaw_dir()
         config_dir.mkdir(parents=True, exist_ok=True)
         config_path = config_dir / "openclaw.json"
-        config = generate_openclaw_config(models, primary_model, workspace)
+        config = _read_json_object(config_path)
+        managed = generate_openclaw_config(models, primary_model, workspace, base_url)
+
+        # meta
+        meta = _ensure_dict(config, "meta")
+        meta["lastTouchedVersion"] = managed["meta"]["lastTouchedVersion"]
+        meta["lastTouchedAt"] = managed["meta"]["lastTouchedAt"]
+
+        # auth.profiles：只更新本工具管理的 profile，保留用户新增 profile
+        auth = _ensure_dict(config, "auth")
+        auth_profiles = _ensure_dict(auth, "profiles")
+        for profile_key, profile_value in managed["auth"]["profiles"].items():
+            auth_profiles[profile_key] = profile_value
+
+        # models.providers：只覆盖本工具管理的 provider，其他 provider 不动
+        models_node = _ensure_dict(config, "models")
+        models_node["mode"] = managed["models"]["mode"]
+        providers_node = _ensure_dict(models_node, "providers")
+        managed_providers = managed["models"]["providers"]
+        for provider_key, provider_config in managed_providers.items():
+            existing_provider = providers_node.get(provider_key)
+            if isinstance(existing_provider, dict):
+                existing_provider["baseUrl"] = provider_config["baseUrl"]
+                existing_provider["api"] = provider_config["api"]
+                existing_provider["models"] = provider_config["models"]
+            else:
+                providers_node[provider_key] = provider_config
+
+        # 对本工具管理的 provider，若当前模型列表不再包含则移除
+        for provider_key in PROVIDERS:
+            if provider_key not in managed_providers:
+                providers_node.pop(provider_key, None)
+
+        # agents.defaults：只更新约定路径，保留其他节点
+        agents = _ensure_dict(config, "agents")
+        defaults = _ensure_dict(agents, "defaults")
+        model_node = _ensure_dict(defaults, "model")
+        model_node["primary"] = managed["agents"]["defaults"]["model"]["primary"]
+
+        aliases = _ensure_dict(defaults, "models")
+        managed_aliases = managed["agents"]["defaults"]["models"]
+
+        # 仅清理本工具管理 provider 的 alias，保留用户新增 provider 的 alias
+        provider_prefixes = tuple(f"{pkey}/" for pkey in PROVIDERS)
+        for alias_key in list(aliases.keys()):
+            if isinstance(alias_key, str) and alias_key.startswith(provider_prefixes):
+                aliases.pop(alias_key, None)
+        for alias_key, alias_value in managed_aliases.items():
+            aliases[alias_key] = alias_value
+
+        defaults["workspace"] = managed["agents"]["defaults"]["workspace"]
+        compaction = defaults.get("compaction")
+        if not isinstance(compaction, dict):
+            defaults["compaction"] = managed["agents"]["defaults"]["compaction"]
+        elif "mode" not in compaction:
+            compaction["mode"] = managed["agents"]["defaults"]["compaction"]["mode"]
+
+        # commands / gateway：仅补默认值，不覆盖用户自定义
+        commands = _ensure_dict(config, "commands")
+        for key, value in managed["commands"].items():
+            commands.setdefault(key, value)
+
+        gateway = _ensure_dict(config, "gateway")
+        for key, value in managed["gateway"].items():
+            gateway.setdefault(key, value)
+
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=2, ensure_ascii=False)
         return True, str(config_path)
@@ -339,7 +471,22 @@ def save_auth_profiles(gpt_key: str, claude_key: str, google_key: str, other_key
         auth_dir = get_auth_profiles_dir()
         auth_dir.mkdir(parents=True, exist_ok=True)
         auth_path = auth_dir / "auth-profiles.json"
-        config = generate_auth_profiles(gpt_key, claude_key, google_key, other_key)
+        config = _read_json_object(auth_path)
+        managed = generate_auth_profiles(gpt_key, claude_key, google_key, other_key)
+
+        # version：保持兼容，缺失时补默认
+        config.setdefault("version", managed["version"])
+
+        # profiles：只更新本工具管理的 4 个 profile，保留用户新增 profile
+        profiles = _ensure_dict(config, "profiles")
+        for profile_key, profile_value in managed["profiles"].items():
+            profiles[profile_key] = profile_value
+
+        # lastGood：只更新本工具管理 provider，保留用户新增 provider
+        last_good = _ensure_dict(config, "lastGood")
+        for provider_key, profile_name in managed["lastGood"].items():
+            last_good[provider_key] = profile_name
+
         with open(auth_path, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=2, ensure_ascii=False)
         return True, str(auth_path)
@@ -374,7 +521,127 @@ def read_existing_auth_keys() -> tuple[str, str, str, str]:
 
 def read_existing_base_url() -> str:
     """读取已有配置中的 baseUrl"""
-    return BASE_URL
+    config_path = get_openclaw_dir() / "openclaw.json"
+    if not config_path.exists():
+        return BASE_URL
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        providers = data.get("models", {}).get("providers", {})
+        return _extract_base_url_from_providers(providers)
+    except Exception:
+        return BASE_URL
+
+
+def ensure_plugin_allowed(plugin_name: str = WEIXIN_PLUGIN_ALLOW) -> tuple[bool, str]:
+    """确保 openclaw.json 的 plugins.allow 中包含指定插件"""
+    try:
+        config_dir = get_openclaw_dir()
+        config_dir.mkdir(parents=True, exist_ok=True)
+        config_path = config_dir / "openclaw.json"
+        config = _read_json_object(config_path)
+
+        plugins = _ensure_dict(config, "plugins")
+        allow = plugins.get("allow")
+        if not isinstance(allow, list):
+            allow = []
+            plugins["allow"] = allow
+
+        if plugin_name in allow:
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
+            return True, f"plugins.allow 已包含 {plugin_name}"
+
+        allow.append(plugin_name)
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+        return True, f"已将 {plugin_name} 添加到 plugins.allow"
+    except Exception as e:
+        return False, str(e)
+
+
+def install_weixin_plugin(callback=None) -> tuple[bool, str]:
+    """安装微信插件并执行登录绑定，最后写入 plugins.allow"""
+    claw_ok, claw_msg = check_openclaw_installed()
+    if not claw_ok:
+        return False, f"OpenClaw 未安装或不可用: {claw_msg}"
+
+    # 第一步：安装插件
+    step1_cmd = "openclaw plugins install @tencent-weixin/openclaw-weixin"
+    if callback:
+        callback(f"[1/3] 正在安装微信插件: {step1_cmd}")
+    try:
+        process = subprocess.Popen(
+            step1_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            shell=True,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        output_lines = []
+        for line in iter(process.stdout.readline, ""):
+            line = line.rstrip()
+            output_lines.append(line)
+            if line and callback:
+                callback(line)
+        process.wait()
+        if process.returncode != 0:
+            install_output = "\n".join(output_lines)
+            lowered = install_output.lower()
+            # 已安装时允许继续后续步骤（写入 allow + 扫码登录）
+            already_exists = (
+                "plugin already exists" in lowered
+                or ("already exists" in lowered and "openclaw-weixin" in lowered)
+                or "已存在" in install_output
+            )
+            if already_exists:
+                if callback:
+                    callback("检测到微信插件已存在，跳过安装步骤，继续后续流程。")
+            else:
+                return False, "微信插件安装失败:\n" + install_output
+    except Exception as e:
+        return False, f"执行插件安装失败: {e}"
+
+    # 第二步：先写入 plugins.allow
+    if callback:
+        callback("[2/3] 正在更新 openclaw.json 的 plugins.allow...")
+    ok, msg = ensure_plugin_allowed(WEIXIN_PLUGIN_ALLOW)
+    if not ok:
+        return False, f"插件白名单更新失败: {msg}"
+    if callback:
+        callback(msg)
+
+    # 第三步：直接执行扫码登录并输出日志
+    step2_cmd = "openclaw channels login --channel openclaw-weixin"
+    if callback:
+        callback("[3/3] 正在执行微信扫码绑定，请按提示完成登录...")
+    try:
+        login_proc = subprocess.Popen(
+            step2_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            shell=True,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        login_output = []
+        for line in iter(login_proc.stdout.readline, ""):
+            line = line.rstrip()
+            login_output.append(line)
+            if line and callback:
+                callback(line)
+        login_proc.wait()
+        if login_proc.returncode != 0:
+            return False, "微信扫码绑定失败:\n" + "\n".join(login_output)
+    except Exception as e:
+        return False, f"执行微信扫码绑定失败: {e}"
+
+    return True, "微信插件安装并绑定成功"
 
 
 def read_existing_models() -> list[dict]:
