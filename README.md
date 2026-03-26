@@ -2,6 +2,12 @@
 
 一个可视化的 Windows 桌面工具，用于一键安装、配置和卸载 [OpenClaw](https://openclaw.ai/)。
 
+## Linux 一键安装
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yansd001/openclawInstallTools/main/install.sh | bash
+```
+
 ## 视频教程
 👉 [点击观看 Bilibili 视频教程](https://www.bilibili.com/video/BV1RwcXzREwR)
 
